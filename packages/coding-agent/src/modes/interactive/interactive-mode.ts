@@ -77,6 +77,7 @@ import {
 	detectCacheMiss,
 } from "../../core/cache-stats.ts";
 import { formatCacheWarmingStatus, formatCacheWarmingUsage } from "../../core/cache-warmer.ts";
+import { collectContextReport, formatContextReport } from "../../core/context-inspector.ts";
 import { findExtensionStackMatches, recordCrash, takeUnnotifiedCrash } from "../../core/crash-log.ts";
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "../../core/defaults.ts";
 import type {
@@ -3448,6 +3449,11 @@ export class InteractiveMode {
 			}
 			if (text === "/session") {
 				this.handleSessionCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/context") {
+				this.handleContextCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -6934,6 +6940,35 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		const displayName = sessionName ?? name;
 		this.chatContainer.addChild(new ThemedText(() => theme.fg("dim", `Session name set: ${displayName}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	// Read-only diagnostic: renders the current context breakdown as ephemeral
+	// TUI text. Nothing here is appended to the session or sent to the model.
+	private handleContextCommand(): void {
+		const usage = this.session.getContextUsage();
+		this.chatContainer.addChild(new Spacer(1));
+		if (usage === undefined) {
+			this.chatContainer.addChild(
+				new ThemedText(
+					() => theme.fg("dim", "Context usage is unknown: no model with a context window is selected."),
+					1,
+					0,
+				),
+			);
+			this.ui.requestRender();
+			return;
+		}
+		const report = collectContextReport({
+			projection: this.sessionManager.buildSessionProjection(),
+			branchEntries: this.sessionManager.getBranch(),
+			entries: this.sessionManager.getEntries(),
+			contextWindow: usage.contextWindow,
+			reportedTokens: usage.tokens,
+			compactionSettings: this.settingsManager.getCompactionSettings(this.session.model),
+			modelRuntime: this.session.modelRuntime,
+		});
+		this.chatContainer.addChild(new ThemedText(() => formatContextReport(report), 1, 0));
 		this.ui.requestRender();
 	}
 
